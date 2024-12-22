@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15.3-alpine3.18
+    env_file:
+      - .env
+    environment:
+      PG_DATA: /var/lib/postgresql/data
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - app
+  
+  adminer:
+    image: adminer
+    restart: always
+    depends_on:
+      - postgres
+    networks:
+      - app
+    ports:
+      - ${ADMINER_PORT}:8080
+    env_file:
+      - .env
+
+  redis:
+    image: redis
+    ports:
+      - ${REDIS_PORT}:6379
+    env_file:
+      - .env
+    networks:
+      - app
+
+  celery-tasks:
+    build:
+      context: .
+    env_file:
+      - .env
+    command: celery -A core worker -l info
+    volumes:
+      - .:/app:delegated
+    depends_on:
+      - postgres
+      - adminer
+      - redis
+      - main
+    networks:
+      - app
+    restart: always
+
+  celery-beat-tasks:
+    build:
+      context: .
+    env_file:
+      - .env
+    command: celery -A core beat -l info
+    volumes:
+      - .:/app:delegated
+    networks:
+      - app
+    depends_on:
+      - postgres
+      - adminer
+      - redis
+      - main
+      - celery-tasks  
+
+  main:
+    build:
+      context: .
+    env_file:
+      - .env
+    command: gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 3
+    volumes:
+      - .:/app:delegated
+    ports:
+      - ${PORT}:8000
+    depends_on:
+      - postgres
+      - adminer
+    networks:
+      - app
+    restart: always
+
+networks:
+  app:
+
+volumes:
+  pgdata:
